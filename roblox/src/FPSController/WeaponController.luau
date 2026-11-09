@@ -21,12 +21,16 @@ WeaponController.__index = WeaponController
 -- options:
 --   controller  BodycamController (required)
 --   fpsys       FPSys client (optional: shake, lean)
+--   presenter   Presentation WeaponPresenter (optional: shots follow the weapon's free
+--               aim and sway, a wall in front of the barrel blocks firing, stress)
 --   movement    MovementController (optional: sprint rules, stance scale)
 --   weapons     list of Weapon configs (default: one Weapon.defaultConfig())
 --   onFire      function(fireCFrame: CFrame, weapon) per shot
 --   onEvent     function(name, weapon): Equipped, Unequipped, Reloaded, ReloadStarted,
 --               Empty, FireModeChanged, ScopeChanged
 --   fovSpeed    1/s FOV easing (default 12)
+--   fovModifier function(target, weapon, aiming) -> number: changes the FOV target
+--               (e.g. Headcam:fovFor for the wide helmet lens)
 --   random      function() -> [0, 1) for recoil (default math.random)
 function WeaponController.new(options)
 	assert(options and options.controller, "WeaponController needs a BodycamController")
@@ -114,7 +118,8 @@ end
 
 function WeaponController:pullTrigger()
 	local weapon = self:current()
-	if self:_sprinting() or weapon:isBusy() then
+	local presenter = self.options.presenter
+	if self:_sprinting() or weapon:isBusy() or (presenter and presenter:blocksFire()) then
 		return
 	end
 	weapon:pullTrigger()
@@ -198,7 +203,8 @@ function WeaponController:getLean(): number
 	return self.lean
 end
 
--- Where shots go: the aim, moved sideways and rolled by the lean.
+-- Where shots go: the aim, moved sideways and rolled by the lean, then turned by the
+-- weapon's free aim and hand sway (so shots leave along the barrel, not screen centre).
 function WeaponController:getFireCFrame(): CFrame?
 	local aim = self.controller:getAimCFrame()
 	if not aim then
@@ -207,7 +213,16 @@ function WeaponController:getFireCFrame(): CFrame?
 	local fpsys = self.options.fpsys
 	if fpsys then
 		local offset, roll = fpsys:getLean()
-		return aim * CFrame.new(offset, 0, 0) * CFrame.Angles(0, 0, roll)
+		aim = aim * CFrame.new(offset, 0, 0) * CFrame.Angles(0, 0, roll)
+	end
+	-- The crouch drop moves the eye too.
+	local movement = self.options.movement
+	if movement and movement.machine.drop > 1e-3 then
+		aim = aim * CFrame.new(0, -movement.machine.drop, 0)
+	end
+	local presenter = self.options.presenter
+	if presenter then
+		aim = aim * presenter:getFireRotation()
 	end
 	return aim
 end
@@ -232,6 +247,11 @@ end
 function WeaponController:_step(dt: number)
 	local now = self.clock()
 	local weapon = self:current()
+	local presenter = self.options.presenter
+	-- A barrel pressed into a wall cannot fire.
+	if presenter and presenter:blocksFire() and weapon.trigger then
+		weapon:releaseTrigger()
+	end
 	local shots, sprayEnded, event = weapon:update(now)
 
 	if event == "Unequipped" and self.pendingIndex then
@@ -254,6 +274,9 @@ function WeaponController:_step(dt: number)
 		local config = weapon.config
 		for _ = 1, shots do
 			self.controller:notifyShot(config.power * stance)
+			if presenter then
+				presenter:onShot()
+			end
 			self.recoil:onShot(stance, self.aiming)
 			if self.options.fpsys then
 				self.options.fpsys:shake(config.shake * stance * (if self.aiming then 0.5 else 1))
@@ -279,6 +302,9 @@ function WeaponController:_step(dt: number)
 	local camera = Workspace.CurrentCamera
 	if camera then
 		local target = weapon:fov(self.aiming)
+		if self.options.fovModifier then
+			target = self.options.fovModifier(target, weapon, self.aiming) or target
+		end
 		local rate = self.options.fovSpeed or 12
 		camera.FieldOfView += (target - camera.FieldOfView) * (1 - math.exp(-rate * dt))
 	end

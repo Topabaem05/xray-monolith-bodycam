@@ -33,7 +33,7 @@ function Env.new()
 	local env = {}
 	local enumCache = {}
 	env.Enum = setmetatable({
-		RenderPriority = { Camera = { Value = 200 }, Input = { Value = 100 } },
+		RenderPriority = { Camera = { Value = 200 }, Input = { Value = 100 }, Last = { Value = 2000 } },
 	}, {
 		__index = function(_, category)
 			local items = enumCache[category]
@@ -91,17 +91,30 @@ function Env.new()
 			}
 		end,
 	}
+	-- task.delay queues; runDelayed() runs what is queued (and what that queues).
+	env.delayed = {}
 	env.task = {
 		spawn = function(fn, ...)
 			fn(...)
 		end,
+		delay = function(seconds, fn, ...)
+			table.insert(env.delayed, { seconds = seconds, fn = fn, args = { ... } })
+		end,
 	}
+	function env.runDelayed()
+		while #env.delayed > 0 do
+			local entry = table.remove(env.delayed, 1)
+			entry.fn(table.unpack(entry.args))
+		end
+	end
 
 	-- Render steps.
 	env.bound = {}
 	env.heartbeat = signal()
+	env.stepped = signal()
 	env.RunService = {
 		Heartbeat = env.heartbeat,
+		Stepped = env.stepped,
 		BindToRenderStep = function(_, name, priority, fn)
 			table.insert(env.bound, { name = name, priority = priority, fn = fn })
 			table.sort(env.bound, function(a, b)
@@ -133,6 +146,10 @@ function Env.new()
 		Size = Vector3.new(2, 2, 1),
 		children = {},
 	}
+	function env.root:IsA(c)
+		return c == "BasePart" or c == "Part"
+	end
+	env.root.AssemblyRootPart = env.root
 	function env.root:FindFirstChild(name)
 		return self.children[name]
 	end
@@ -164,24 +181,53 @@ function Env.new()
 	function humanoid:IsA(c)
 		return c == "Humanoid"
 	end
+	function humanoid:FindFirstChildOfClass()
+		return nil
+	end
+	humanoid.MaxHealth = 100
 	local floorChanged = signal()
 	function humanoid:GetPropertyChangedSignal()
 		return floorChanged
 	end
 	env.humanoid = humanoid
+	-- Extra character children (e.g. FakeInstances parts) a test adds.
+	env.characterParts = {}
+	local function extraChild(name)
+		for _, part in env.characterParts do
+			if part.Name == name then
+				return part
+			end
+		end
+		return nil
+	end
 	local character = {
 		Name = "Player1",
+		IsA = function(_, c)
+			return c == "Model"
+		end,
 		FindFirstChildOfClass = function(_, className)
 			return if className == "Humanoid" then humanoid else nil
 		end,
 		FindFirstChild = function(_, name)
-			return if name == "HumanoidRootPart" then env.root else nil
+			return if name == "HumanoidRootPart" then env.root else extraChild(name)
+		end,
+		FindFirstChildWhichIsA = function()
+			return nil
 		end,
 		WaitForChild = function(_, name)
 			return if name == "HumanoidRootPart" then env.root else nil
 		end,
 		GetDescendants = function()
-			return {}
+			local list = {}
+			for _, part in env.characterParts do
+				table.insert(list, part)
+				if part.GetDescendants then
+					for _, d in part:GetDescendants() do
+						table.insert(list, d)
+					end
+				end
+			end
+			return list
 		end,
 		DescendantAdded = signal(),
 		Parent = true,
@@ -189,6 +235,9 @@ function Env.new()
 	humanoid.Parent = character
 	env.character = character
 	env.player = { Character = character, CharacterAdded = signal(), Name = "Player1" }
+	function env.player:DistanceFromCharacter(point)
+		return (env.root.Position - point).Magnitude
+	end
 	env.Players = {
 		LocalPlayer = env.player,
 		GetPlayerFromCharacter = function(_, c)
@@ -210,6 +259,16 @@ function Env.new()
 			return nil
 		end,
 	}
+	function env.Workspace:Spherecast(origin, _, direction)
+		env.raycasts += 1
+		for _, wall in env.walls do
+			local hit = wall(origin, direction)
+			if hit then
+				return hit
+			end
+		end
+		return nil
+	end
 	env.UserInputService = { MouseDeltaSensitivity = 1, mouseDelta = { X = 0, Y = 0 } }
 	function env.UserInputService:GetMouseDelta()
 		return self.mouseDelta
@@ -224,6 +283,10 @@ function Env.new()
 		GetInstanceAddedSignal = function(self)
 			return self.added
 		end,
+		-- FakeInstances carry their tags in a `tags` set.
+		HasTag = function(_, instance, tag)
+			return instance.tags ~= nil and instance.tags[tag] == true
+		end,
 	}
 	local services = {
 		Players = env.Players,
@@ -233,6 +296,7 @@ function Env.new()
 		Lighting = env.Lighting,
 		CollectionService = env.CollectionService,
 		ReplicatedStorage = {},
+		SoundService = {},
 	}
 	env.game = {
 		GetService = function(_, name)
@@ -244,6 +308,14 @@ function Env.new()
 		_G.Vector3, _G.CFrame = Vector3, CFrame
 		_G.Enum, _G.game, _G.Instance, _G.Random, _G.task = env.Enum, env.game, env.Instance, env.Random, env.task
 		_G.workspace = env.Workspace
+		_G.Color3 = {
+			new = function(r, g, b)
+				return { R = r or 0, G = g or 0, B = b or 0 }
+			end,
+			fromRGB = function(r, g, b)
+				return { R = r / 255, G = g / 255, B = b / 255 }
+			end,
+		}
 		_G.RaycastParams = {
 			new = function()
 				return {}
@@ -254,6 +326,8 @@ function Env.new()
 				return "EnumItem"
 			elseif type(v) == "table" and v.__connection then
 				return "RBXScriptConnection"
+			elseif type(v) == "table" and v.__instance then
+				return "Instance"
 			end
 			return type(v)
 		end
@@ -276,6 +350,7 @@ function Env.new()
 		if beforeCamera then
 			beforeCamera(dt)
 		end
+		env.stepped:Fire(0, dt)
 		env.heartbeat:Fire(dt)
 	end
 
