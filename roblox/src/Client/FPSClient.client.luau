@@ -4,7 +4,9 @@
 -- sprinting), Space jump (stands up from crouch/prone), right mouse aim, left mouse
 -- fire, R reload, V fire mode, T next scope (while aiming), 1/2 weapons, Q/E lean,
 -- Left Alt hold breath (steadies the sway while aiming), H bodycam / helmet camera,
--- F next player to spectate (after death).
+-- F next player to spectate (after death), L weapon light, N night vision.
+-- Shots are simulated bullets (Ballistics); BallisticsServer checks them and applies damage.
+-- Sounds: fill in the asset ids of Sound.director().defaultSounds() (none are included).
 -- Viewmodels: put rigs in ReplicatedStorage.Viewmodels and name one in a weapon
 -- config's `viewmodel`; Animation instances in the rig's "Animations" folder load by
 -- name (Idle loops; Equip, Reload, Fire play on those events).
@@ -19,6 +21,9 @@ local Bodycam = require(ReplicatedStorage:WaitForChild("Bodycam"))
 local FPSys = require(ReplicatedStorage:WaitForChild("FPSys"))
 local FPSController = require(ReplicatedStorage:WaitForChild("FPSController"))
 local Presentation = require(ReplicatedStorage:WaitForChild("Presentation"))
+local Ballistics = require(ReplicatedStorage:WaitForChild("Ballistics"))
+local Lights = require(ReplicatedStorage:WaitForChild("Lights"))
+local Sound = require(ReplicatedStorage:WaitForChild("Sound"))
 
 local player = Players.LocalPlayer
 player.CameraMode = Enum.CameraMode.LockFirstPerson
@@ -78,6 +83,85 @@ local screen = Presentation.screenEffects().new({
 		return controller:getViewCFrame()
 	end,
 })
+
+-- Gunfire through the bodycam microphone: distance layers, walls, room reverb,
+-- ducking after loud shots, ringing ears, cracks from bullets passing close.
+local sounds = Sound.director().new({
+	onNearMiss = function(distance)
+		presenter:onNearMiss(distance)
+	end,
+	getExertion = function()
+		return presenter.director.state.exertion
+	end,
+})
+
+-- Where the muzzle is: the rig's "Muzzle" attachment, or a point ahead of the weapon.
+local function muzzleCFrame()
+	local attachment = viewmodel and not viewmodel.Culled and viewmodel.Instance:FindFirstChild("Muzzle", true)
+	if attachment and attachment:IsA("Attachment") then
+		return attachment.WorldCFrame
+	end
+	local hud = controller:getHudCFrame()
+	return hud and hud * presenter:getFireRotation() * CFrame.new(0.25, -0.2, -2.5)
+end
+
+local muzzleFlash = Lights.muzzleFlash().new({ getMuzzleCFrame = muzzleCFrame, screen = screen })
+local flashlight = Lights.flashlight().new({ getBeamCFrame = muzzleCFrame })
+local nightVision = Lights.nightVision().new({ screen = screen })
+
+-- Bullets: own shots fly at once and report what they hit; other players' shots fly
+-- for their sound and near misses only. The server decides the damage.
+local remotes = ReplicatedStorage:WaitForChild(Ballistics.REMOTES, 10)
+local fireRemote = remotes and remotes:WaitForChild("Fire", 5)
+local hitRemote = remotes and remotes:WaitForChild("Hit", 5)
+local shotRemote = remotes and remotes:WaitForChild("Shot", 5)
+local impacts = Ballistics.impacts().new()
+local shootableLights = Lights.shootableLights()
+local bulletParams = RaycastParams.new()
+bulletParams.FilterType = Enum.RaycastFilterType.Exclude
+local nextShotId = 0
+local simulator = Ballistics.simulator().new({
+	getParams = function(projectile)
+		local ignore = {}
+		local shooter = projectile.data.shooter
+		if shooter and shooter.Character then
+			table.insert(ignore, shooter.Character)
+		end
+		if viewmodel then
+			table.insert(ignore, viewmodel.Instance)
+		end
+		bulletParams.FilterDescendantsInstances = ignore
+		return bulletParams
+	end,
+	onSegment = function(projectile, from, to)
+		if not projectile.data.own then
+			local offset = to - from
+			if offset.Magnitude > 0.01 then
+				sounds:bulletPassed(from, offset.Unit, offset.Magnitude, projectile:speed())
+			end
+		end
+	end,
+	onImpact = function(projectile, hit, _outcome, humanoid)
+		if not humanoid then
+			impacts:add(hit)
+		end
+		local data = projectile.data
+		if data.own and not data.reported and hitRemote and (humanoid or shootableLights.find(hit.Instance)) then
+			data.reported = true
+			hitRemote:FireServer(data.id, hit.Instance, hit.Position)
+		end
+	end,
+})
+if shotRemote then
+	shotRemote.OnClientEvent:Connect(function(shooter, origin, direction, name)
+		local stats = type(name) == "string" and Ballistics.Catalog.get(name)
+		if not stats or typeof(origin) ~= "Vector3" or typeof(direction) ~= "Vector3" then
+			return
+		end
+		sounds:playGunshot(name, origin)
+		simulator:fire(stats, origin, direction, { shooter = shooter })
+	end)
+end
 
 local rifle = FPSController.Weapon.defaultConfig()
 rifle.scopes = {
@@ -145,9 +229,6 @@ local function showViewmodel(config)
 	end
 end
 
-local rayParams = RaycastParams.new()
-rayParams.FilterType = Enum.RaycastFilterType.Exclude
-
 weapons = FPSController.weapons().new({
 	controller = controller,
 	fpsys = fpsys,
@@ -168,12 +249,16 @@ weapons = FPSController.weapons().new({
 			viewmodel:Play("Reload")
 		end
 	end,
-	onFire = function(fireCFrame)
-		rayParams.FilterDescendantsInstances = { player.Character }
-		local hit = Workspace:Raycast(fireCFrame.Position, fireCFrame.LookVector * 1000, rayParams)
-		if hit then
-			-- Send the hit to the server here.
+	onFire = function(fireCFrame, weapon)
+		local name = weapon.config.name
+		local stats = Ballistics.Catalog.get(name) or Ballistics.Catalog.get("Rifle")
+		nextShotId += 1
+		simulator:fire(stats, fireCFrame.Position, fireCFrame.LookVector, { own = true, shooter = player, id = nextShotId })
+		if fireRemote then
+			fireRemote:FireServer(nextShotId, Workspace:GetServerTimeNow(), fireCFrame.Position, fireCFrame.LookVector, name)
 		end
+		muzzleFlash:fire()
+		sounds:playGunshot(name, fireCFrame.Position, { own = true })
 		if viewmodel then
 			viewmodel:Play("Fire")
 		end
@@ -187,6 +272,10 @@ presenter:start()
 weapons:start()
 headcam:start()
 screen:start()
+sounds:start()
+muzzleFlash:start()
+flashlight:start()
+simulator:start()
 showViewmodel(weapons:current().config)
 
 -- After death, watch the others through their helmet cameras until respawning.
@@ -273,6 +362,10 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		holdingBreath = true
 	elseif key == Enum.KeyCode.H then
 		headcam:toggle()
+	elseif key == Enum.KeyCode.L then
+		flashlight:toggle()
+	elseif key == Enum.KeyCode.N then
+		nightVision:toggle()
 	elseif key == Enum.KeyCode.F and headcam:getSpectating() then
 		spectateNext()
 	end

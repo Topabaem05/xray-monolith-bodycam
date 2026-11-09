@@ -60,8 +60,12 @@ roblox/
 │   ├── FPSController/            ReplicatedStorage.FPSController: 이동 상태, 무기, 반동
 │   ├── Presentation/             ReplicatedStorage.Presentation: 흔들림, 프리 에임, 화면 효과, 뷰모델, 헤드캠
 │   ├── Realism/                  ReplicatedStorage.Realism: 1인칭 몸, 시선 복제 (MPL-2.0)
+│   ├── Sound/                    ReplicatedStorage.Sound: 총성 음향, 바디캠 마이크, 이명 (가이드 코드)
+│   ├── Lights/                   ReplicatedStorage.Lights: 총구 섬광, 플래시라이트, 쏴서 끄는 조명, 야간 투시 (가이드 코드)
+│   ├── Ballistics/               ReplicatedStorage.Ballistics: 탄도, 관통·도탄, 서버 검증 (가이드 코드)
 │   ├── Client/FPSClient.client.luau       예제 LocalScript (모든 패키지를 연결)
-│   └── Server/FPSServer.server.luau       태그 지정과 룩 앵글 중계
+│   ├── Server/FPSServer.server.luau       태그 지정과 룩 앵글 중계
+│   └── Server/BallisticsServer.server.luau  사격·명중 검증, 피해, 조명 파괴 예제
 ├── THIRD-PARTY-NOTICES.md        포팅한 오픈소스의 라이선스 전문
 ├── tests/                        Roblox 밖에서 도는 테스트, 골든 트레이스
 └── tools/
@@ -85,8 +89,8 @@ rojo serve roblox/default.project.json
 ```
 
 3. Roblox Studio의 Rojo 플러그인에서 Connect를 누릅니다.
-   `ReplicatedStorage`에 `Bodycam`, `FPSys`, `FPSController`, `Presentation`, `Realism`이, `ServerScriptService`에
-   `FPSServer`가, `StarterPlayerScripts`에 `FPSClient`가 생깁니다.
+   `ReplicatedStorage`에 `Bodycam`, `FPSys`, `FPSController`, `Presentation`, `Realism`, `Sound`, `Lights`, `Ballistics`가,
+   `ServerScriptService`에 `FPSServer`와 `BallisticsServer`가, `StarterPlayerScripts`에 `FPSClient`가 생깁니다.
 4. 업로드한 원본 FPSys 모델은 넣지 마세요. 이 프로젝트의 `FPSys`가 그것을 대신하고,
    둘을 같이 넣으면 카메라와 RemoteEvent가 두 번 처리됩니다.
 
@@ -95,8 +99,9 @@ rojo serve roblox/default.project.json
 1. `ReplicatedStorage`에 ModuleScript `Bodycam`을 만들고 `src/Bodycam/init.luau` 내용을 붙여 넣습니다.
 2. 그 아래에 `src/Bodycam`의 나머지 파일마다 같은 이름의 ModuleScript를 만들어 붙여 넣습니다(확장자 제외한 이름).
 3. 하위 폴더가 있는 패키지는 같은 구조의 Folder를 만듭니다.
-4. `FPSys`, `FPSController`, `Presentation`, `Realism`도 같은 방법으로 만듭니다(`init.luau`가 패키지 ModuleScript, 나머지는 그 자식, 하위 폴더는 Folder).
+4. `FPSys`, `FPSController`, `Presentation`, `Realism`, `Sound`, `Lights`, `Ballistics`도 같은 방법으로 만듭니다(`init.luau`가 패키지 ModuleScript, 나머지는 그 자식, 하위 폴더는 Folder).
 5. `ServerScriptService`에 Script를 만들고 `src/Server/FPSServer.server.luau` 내용을 붙여 넣습니다.
+   `src/Server/BallisticsServer.server.luau`도 같은 방법으로 넣습니다.
 6. `StarterPlayerScripts`에 LocalScript를 만들고 `src/Client/FPSClient.client.luau` 내용을 붙여 넣습니다.
 
 ## 사용법
@@ -342,6 +347,72 @@ end })
 6. **뷰모델:** `CastShadow`는 꺼집니다(이 모듈이 정리함). 총에는 `Sight` Attachment와 `LeftGrip`/`RightGrip` Attachment를 넣습니다.
 7. **그래픽:** Lighting의 `Technology = Future`, `Atmosphere`, `ColorCorrection`과 `Presentation.screenEffects()`를 함께 씁니다.
 
+## 소리, 조명, 탄도 (가이드 코드)
+
+세 패키지는 **가이드 코드**입니다. 구조와 계산식, 연결 방법은 들어 있고 테스트도 통과하지만, 에셋(소리 파일, 탄흔 텍스처)은 없고
+Studio에서 값을 맞추는 작업이 남아 있습니다. 모두 이 프로젝트에서 새로 작성했습니다(외부 코드 없음).
+
+### Sound
+
+| 기능 | 모듈 | 내용 |
+| --- | --- | --- |
+| 벽 뒤 소리 | `Acoustics.occlusion` | 벽 수와 두께에 따라 음량과 고음을 깎습니다. 고음이 더 많이 깎여 먹먹해집니다 |
+| 거리별 총성 | `Acoustics.layerWeights` | 근거리·중거리·원거리 녹음을 등전력으로 섞습니다 |
+| 소리 지연 | `Acoustics.delay` | 음속(343 m/s)만큼 늦게 들립니다. 섬광이 먼저 보입니다 |
+| 잔향 | `Enclosure`, `Acoustics.reverb` | 주변으로 레이를 쏴 실내 정도와 방 크기를 재고, 잔향 길이를 정합니다 |
+| 탄 스침 | `SoundDirector:bulletPassed` | 탄이 25 스터드 안으로 지나가면 초음속은 "딱" 소리, 아음속은 "휙" 소리를 냅니다. `onNearMiss`로 스트레스 모델에 연결됩니다 |
+| 바디캠 마이크 | `MicAgc` | 큰 소리에 게인이 즉시 내려가고(최대 -18 dB) 천천히 돌아옵니다. 과부하 때 왜곡이 섞입니다 |
+| 이명 | `Hearing` | 실내에서 소음기 없이 쏘면 고음이 줄고, 연사하면 울림이 생겼다가 사라집니다 |
+| 숨소리 | `SoundDirector` | 지침(exertion)에 따라 음량과 속도가 변합니다 |
+
+```lua
+local Sound = require(game.ReplicatedStorage.Sound)
+local Director = Sound.director()
+local library = Director.defaultSounds()
+library.gunshots.Rifle.close = "rbxassetid://..."   -- 직접 채워야 합니다. 빈 id는 재생하지 않습니다
+local sounds = Director.new({ sounds = library, onNearMiss = function(d) presenter:onNearMiss(d) end })
+sounds:start()
+sounds:playGunshot("Rifle", muzzlePosition, { own = true })   -- 내 총: 지연·벽 없음
+sounds:playGunshot("Rifle", position)                         -- 남의 총: 거리·벽·지연 적용
+```
+
+지금은 `Sound`, `SoundGroup`, `EqualizerSoundEffect`로 먹먹함을 만듭니다. Roblox의 새 Audio API(`AudioFilter` 저역 통과)를 쓰면
+더 자연스럽지만, 속성 이름을 문서로 확인하지 못해 쓰지 않았습니다.
+
+### Lights
+
+| 기능 | 모듈 | 내용 |
+| --- | --- | --- |
+| 총구 섬광 | `MuzzleFlash` | 발사마다 그림자를 드리우는 PointLight가 8 ms에 켜지고 지수적으로 꺼집니다. 방이 실제로 밝아집니다 |
+| 섬광 후 노출 | `ScreenEffects:notifyFlash` | 섬광 직후 화면이 잠깐 어두워졌다 돌아옵니다(카메라 자동 노출) |
+| 플래시라이트 | `Flashlight` | 총을 약간 늦게 따라가는 SpotLight입니다. 빛이 닿은 곳에 표면 색을 띤 약한 조명을 하나 더 둬서 반사광을 흉내 냅니다 |
+| 쏴서 끄는 조명 | `ShootableLights` | Studio에서 `ShootableLight` 태그를 붙인 조명은 맞으면 꺼집니다. 서버에서 실행합니다 |
+| 저조도 노이즈 | `ScreenEffects` `Grain.LowLightBoost` | 어두울수록 그레인이 강해집니다(센서 게인 노이즈) |
+| 야간 투시 | `NightVision` | 녹색 단색, 노출 +2.5 EV, 노이즈 3배 |
+
+### Ballistics
+
+| 기능 | 모듈 | 내용 |
+| --- | --- | --- |
+| 탄도 | `Projectile` | 탄속, 중력 낙차, 항력. 프레임레이트에 거의 무관합니다. 소총 2500 스터드/초(약 700 m/s) |
+| 재질 | `Materials` | Roblox 재질별 단단함과 도탄 각도·확률 |
+| 관통·도탄 | `Penetration` | 두께×단단함이 남은 관통력보다 작으면 느려진 채 통과, 얕은 각도면 튕김, 아니면 정지 |
+| 비행 | `Simulator` | 매 스텝 구간을 레이캐스트하고, 반대편에서 역방향 레이로 두께를 잽니다 |
+| 탄흔 | `Impacts` | 고정된 파트에 탄흔을 64개까지 재사용합니다 |
+| 지연 보상 | `PositionHistory` | 서버가 1초간 위치를 기록해, 쏜 시각의 표적 위치를 찾습니다 |
+| 서버 검증 | `ShotValidator` | 연사 속도(토큰 버킷), 시각, 총구 위치, 명중 지점이 탄도선 위인지, 표적이 거기 있었는지 |
+| 무기 수치 | `Catalog` | 탄도와 피해량. 서버와 클라이언트가 같은 표를 씁니다 |
+
+흐름:
+
+1. 클라이언트가 쏘면 자기 탄을 바로 시뮬레이션하고 `Fire`(시각, 위치, 방향, 무기 이름)를 서버로 보냅니다.
+2. 서버는 `ShotValidator.checkShot`으로 확인한 뒤, 다른 클라이언트에 `Shot`을 보냅니다. 받은 쪽은 소리와 탄 스침을 위해 탄을 시뮬레이션합니다.
+3. 쏜 클라이언트의 탄이 캐릭터나 조명에 맞으면 `Hit`을 보냅니다.
+4. 서버는 명중 지점이 탄도선 위인지(낙차 허용), 표적이 쏜 시각에 그 근처에 있었는지, 사이의 벽이 관통력 이내인지 확인하고 피해를 줍니다.
+   피해량은 서버의 `Catalog`에서 나옵니다.
+
+**직접 넣어야 하는 규칙:** 그 무기를 들고 있는지, 탄약이 있는지, 팀·아군 사격. `BallisticsServer`에 표시해 두었습니다.
+
 ## Realism (Character-Realism 포팅)
 
 [MaximumADHD/Character-Realism](https://github.com/MaximumADHD/Character-Realism)(MPL-2.0)을 포팅했습니다.
@@ -400,6 +471,8 @@ end })
 | Left Alt | 숨 참기 (조준 중 흔들림 감소, 놓으면 반동) |
 | H | 바디캠 ↔ 헤드캠 전환 |
 | F | 다음 플레이어 관전 (죽은 뒤 2초 후 자동 시작) |
+| L | 플래시라이트 |
+| N | 야간 투시 |
 
 뷰모델은 `ReplicatedStorage.Viewmodels`에 리그를 넣고 무기 설정의 `viewmodel`에 이름을 적으면 나옵니다(예제: `Rifle`, `Pistol`).
 리그 안 `Animations` 폴더의 Animation은 이름으로 로드됩니다. `Idle`은 반복 재생, `Equip`·`Reload`·`Fire`는 그 이벤트에 재생됩니다.
@@ -446,12 +519,17 @@ smg.profile = { pos = { x = 0.01, y = -0.01, z = 0 }, rot = { x = 0, y = 1, z = 
   FakeCamera 회전, Motor6D 총 장착과 IK 손 고정.
 - `tests/headcam.spec.luau`: 화각 변환, 바디캠 모드에서 변화 없음, 헤드캠 마운트 위치와 에임 유지,
   머리 회전 추종과 감쇠, 벽에 닿을 때 당김, 몸 보이기·머리 숨기기·복원, 스코프 배율 유지, 관전과 카메라 반환.
+- `tests/sound.spec.luau`: 벽에 의한 음량·고음 감쇠, 거리 레이어 등전력, 음속 지연, 잔향, 탄 스침 기하,
+  마이크 게인(즉시 내려감·유지·회복, 프레임레이트 무관), 이명, 실내 판정, 목 클라이언트에서 내 총성·벽 뒤 먼 총성·탄 스침.
+- `tests/lights.spec.luau`: 섬광 곡선, 총구 섬광의 밝기와 노출 알림, 플래시라이트 지연과 반사광 색, 조명 파괴, 야간 투시.
+- `tests/ballistics.spec.luau`: 낙차와 항력, 프레임레이트 무관성, 관통·정지·도탄, 위치 기록 보간,
+  서버 검증(위치·시각·방향·연사 속도·명중 지점), 피해량, 목 월드에서 나무 벽을 뚫고 캐릭터에 맞는 탄과 콘크리트에 막히는 탄.
 - `tests/integration.spec.luau`: 모든 패키지를 함께 띄운 목 클라이언트에서 확인합니다.
   - 걷기 발소리, 조준 FOV·감도, 자동 사격 반동이 에임을 올리고 복귀하는지.
   - 질주 중 사격·조준 금지, 기울이기, 앉기 카메라 높이, 무기 교체.
   - 총알이 총구 방향으로 나가는지, 뷰모델이 그 방향을 가리키는지, 벽에 막히면 사격이 막히는지, 정리 후 남는 연결이 없는지.
 
-현재 전체 96개 테스트가 통과합니다. simplex 노이즈는 원본 TypeScript를 직접 실행해 대조하지
+현재 전체 122개 테스트가 통과합니다. simplex 노이즈는 원본 TypeScript를 직접 실행해 대조하지
 못했습니다(외부 코드 실행이 이 세션에서 허용되지 않음). 대신 성질 테스트로 확인했습니다.
 
 ### 테스트 실행
@@ -490,6 +568,10 @@ roblox/tools/golden/build.sh
 - 기본값은 Roblox 표준 아바타(걷기 16 스터드/초) 기준으로 정했습니다. 다른 축척이면 프리셋과 설정으로 조정하세요.
 - 뷰모델의 IKControl, `Model:ScaleTo`, 애니메이션과 헤드캠의 투명도 처리는 가짜 인스턴스로만 시험했습니다.
   실제 리그에서 손 위치, 축소 후 애니메이션, PlayerModule의 투명도 갱신과 겹치지 않는지 Studio에서 확인하세요.
+- `Sound`, `Lights`, `Ballistics`는 가이드 코드입니다. 소리 에셋과 탄흔 텍스처가 없고, 음향·조명 값과 재질 표는 Studio에서 맞춰야 합니다.
+  `BallisticsServer`와 `FPSClient`의 탄도 연결은 실제 네트워크에서 시험하지 않았습니다. 서버 검증은 그럴듯함 검사이지 완전한 치트 방지가 아닙니다.
+  다른 플레이어의 총구 섬광, 예광탄, 재질별 파편과 피탄음은 넣지 않았습니다.
+- 그림자 있는 조명(총구 섬광, 플래시라이트)은 낮은 그래픽 설정에서 그림자가 사라지고, 기기에 따라 부담이 됩니다. `shadows = false`로 끌 수 있습니다.
 - 헤드캠 관전은 상대 머리 회전을 그대로 씁니다. Realism은 시선 위아래의 일부만 머리에 주므로, 관전 화면은 실제 시선보다 덜 위아래로 움직입니다.
 
 ### 라이선스

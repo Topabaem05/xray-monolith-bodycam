@@ -41,6 +41,9 @@ function ScreenEffects.defaultConfig()
 			PixelScale = 2, -- screen pixels per grain pixel
 			Frames = 6, -- tiles baked and cycled
 			Fps = 24,
+			LowLightBoost = 1.5, -- extra grain in the dark (sensor gain noise); 0 turns it off
+			LowLightLuminance = 0.4, -- adapted luminance below which the boost fades in
+			Headroom = 4, -- strongest grain gain the baked tiles allow
 		},
 		Vignette = {
 			Enabled = true,
@@ -162,6 +165,8 @@ function ScreenEffects.new(options)
 	self.probeIn = 0
 	self.grainFrame = 1
 	self.grainClock = 0
+	self.grainGain = 1
+	self.exposureOffset = 0
 	self.started = false
 	self.instances = {}
 	return self
@@ -216,7 +221,8 @@ function ScreenEffects:start()
 			local time = frame * 0.6180339887 -- spreads the frames through the noise
 			local image = ScreenEffects.bake(n, n, function(x, y)
 				local noise = ShaderMath.filmNoise((x + 0.5) / n, (y + 0.5) / n, time)
-				local alpha = g.Opacity * g.Intensity * math.clamp(0.1 + noise, 0, 1)
+				-- Baked at the headroom gain; update() fades it down to the gain in use.
+				local alpha = math.min(1, (g.Headroom or 1) * g.Opacity * g.Intensity * math.clamp(0.1 + noise, 0, 1))
 				return noise, noise, noise, alpha
 			end)
 			if image then
@@ -395,6 +401,22 @@ function ScreenEffects:probeLuminance(): number
 	return (0.08 + 0.92 * (0.65 * open / #directions + 0.35 * sunLit)) * daylight
 end
 
+-- A bright flash (muzzle flash, explosion) of `luminance` 0..1 in front of the camera:
+-- the auto exposure takes it at once, so the picture dips and then recovers.
+function ScreenEffects:notifyFlash(luminance: number)
+	self.adapted = math.max(self.adapted, luminance)
+end
+
+-- EV added on top of the auto exposure (e.g. night vision).
+function ScreenEffects:setExposureOffset(ev: number)
+	self.exposureOffset = ev
+end
+
+-- Multiplies the grain strength (1 = normal), up to Grain.Headroom.
+function ScreenEffects:setGrainGain(gain: number)
+	self.grainGain = math.max(gain, 0)
+end
+
 function ScreenEffects:update(dt: number)
 	self.time += dt
 	local config = self.config
@@ -413,6 +435,15 @@ function ScreenEffects:update(dt: number)
 		end
 	end
 
+	-- Grain strength: more in the dark, and any gain a mode asks for (night vision).
+	if self.grain then
+		local g = config.Grain
+		local headroom = g.Headroom or 1
+		local darkness = math.clamp(1 - self.adapted / (g.LowLightLuminance or 0.4), 0, 1)
+		local gain = (1 + (g.LowLightBoost or 0) * darkness) * self.grainGain
+		self.grain.ImageTransparency = 1 - math.clamp(gain / headroom, 0, 1)
+	end
+
 	-- Eye adaptation.
 	local e = config.Exposure
 	if e.Enabled then
@@ -425,7 +456,7 @@ function ScreenEffects:update(dt: number)
 		local ev = math.log(e.MiddleGrey / self.adapted, 2) * e.Strength
 		ev = math.clamp(ev, e.MinEV, e.MaxEV)
 		ev += e.HuntEV * math.noise(self.time * e.HuntFrequency, 0.37)
-		Lighting.ExposureCompensation = self.baseExposure + ev
+		Lighting.ExposureCompensation = self.baseExposure + ev + self.exposureOffset
 	end
 
 	-- HUD clock and REC blink.

@@ -17,11 +17,23 @@
       },
       "Realism": {
         "$path": "src/Realism"
+      },
+      "Sound": {
+        "$path": "src/Sound"
+      },
+      "Lights": {
+        "$path": "src/Lights"
+      },
+      "Ballistics": {
+        "$path": "src/Ballistics"
       }
     },
     "ServerScriptService": {
       "FPSServer": {
         "$path": "src/Server/FPSServer.server.luau"
+      },
+      "BallisticsServer": {
+        "$path": "src/Server/BallisticsServer.server.luau"
       }
     },
     "StarterPlayer": {

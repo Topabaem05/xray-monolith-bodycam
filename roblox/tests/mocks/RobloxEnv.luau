@@ -91,11 +91,22 @@ function Env.new()
 			}
 		end,
 	}
+	-- task.delay queues; runDelayed() runs what is queued (and what that queues).
+	env.delayed = {}
 	env.task = {
 		spawn = function(fn, ...)
 			fn(...)
 		end,
+		delay = function(seconds, fn, ...)
+			table.insert(env.delayed, { seconds = seconds, fn = fn, args = { ... } })
+		end,
 	}
+	function env.runDelayed()
+		while #env.delayed > 0 do
+			local entry = table.remove(env.delayed, 1)
+			entry.fn(table.unpack(entry.args))
+		end
+	end
 
 	-- Render steps.
 	env.bound = {}
@@ -272,6 +283,10 @@ function Env.new()
 		GetInstanceAddedSignal = function(self)
 			return self.added
 		end,
+		-- FakeInstances carry their tags in a `tags` set.
+		HasTag = function(_, instance, tag)
+			return instance.tags ~= nil and instance.tags[tag] == true
+		end,
 	}
 	local services = {
 		Players = env.Players,
@@ -281,6 +296,7 @@ function Env.new()
 		Lighting = env.Lighting,
 		CollectionService = env.CollectionService,
 		ReplicatedStorage = {},
+		SoundService = {},
 	}
 	env.game = {
 		GetService = function(_, name)
@@ -292,6 +308,14 @@ function Env.new()
 		_G.Vector3, _G.CFrame = Vector3, CFrame
 		_G.Enum, _G.game, _G.Instance, _G.Random, _G.task = env.Enum, env.game, env.Instance, env.Random, env.task
 		_G.workspace = env.Workspace
+		_G.Color3 = {
+			new = function(r, g, b)
+				return { R = r or 0, G = g or 0, B = b or 0 }
+			end,
+			fromRGB = function(r, g, b)
+				return { R = r / 255, G = g / 255, B = b / 255 }
+			end,
+		}
 		_G.RaycastParams = {
 			new = function()
 				return {}

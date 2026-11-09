@@ -9,6 +9,7 @@ local CFrame = RobloxMath.CFrame
 local Fake = {}
 
 local PARTS = { Part = true, MeshPart = true, UnionOperation = true }
+local LIGHTS = { PointLight = true, SpotLight = true, SurfaceLight = true }
 
 local function isA(className, wanted)
 	if className == wanted or wanted == "Instance" then
@@ -16,6 +17,8 @@ local function isA(className, wanted)
 	end
 	if wanted == "BasePart" then
 		return PARTS[className] == true
+	elseif wanted == "Light" then
+		return LIGHTS[className] == true
 	end
 	return false
 end
@@ -68,6 +71,29 @@ function methods:FindFirstChildWhichIsA(className)
 	return nil
 end
 methods.FindFirstChildOfClass = methods.FindFirstChildWhichIsA
+
+function methods:FindFirstAncestorOfClass(className)
+	local current = self.Parent
+	while current do
+		if current.ClassName == className then
+			return current
+		end
+		current = current.Parent
+	end
+	return nil
+end
+
+function methods:GetAttribute(name)
+	local attributes = self.attributes
+	return attributes and attributes[name]
+end
+
+function methods:SetAttribute(name, value)
+	if not self.attributes then
+		self.attributes = {}
+	end
+	self.attributes[name] = value
+end
 
 function methods:Destroy()
 	self.Parent = nil

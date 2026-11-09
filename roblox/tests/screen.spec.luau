@@ -133,6 +133,30 @@ return function(T)
 		T.truthy(lighting.ExposureCompensation > 0.25 + 0.5, "dark room raises exposure: " .. lighting.ExposureCompensation)
 		T.truthy(string.find(effects.hud.Text, "BODYCAM", 1, true) ~= nil, "HUD label")
 		T.truthy(string.find(effects.hud.Text, "2026-11-09", 1, true) ~= nil, "HUD timestamp")
+
+		-- Low light raises the grain (daylight shows 1/Headroom of the baked tiles).
+		local darkness = math.clamp(1 - effects.adapted / 0.4, 0, 1)
+		T.truthy(darkness > 0.8, "the room reads as dark: " .. darkness)
+		T.near(effects.grain.ImageTransparency, 1 - (1 + 1.5 * darkness) / 4, 0.01, "dark room: boosted grain")
+		T.truthy(effects.grain.ImageTransparency < 0.75, "stronger than daylight's 1/4 of the baked tiles")
+		effects:setGrainGain(3)
+		env.step(1 / 60)
+		T.equal(effects.grain.ImageTransparency, 0, "night vision gain reaches the headroom")
+		effects:setGrainGain(1)
+
+		-- A muzzle flash: the auto exposure dips at once, then recovers.
+		local before = lighting.ExposureCompensation
+		effects:notifyFlash(0.9)
+		env.step(1 / 60)
+		T.truthy(lighting.ExposureCompensation < before - 0.5, "flash dips the exposure")
+		for _ = 1, 240 do
+			env.step(1 / 60)
+		end
+		T.near(lighting.ExposureCompensation, before, 0.15, "and it recovers")
+		effects:setExposureOffset(2)
+		env.step(1 / 60)
+		T.truthy(lighting.ExposureCompensation > before + 1.7, "exposure offset added")
+		effects:setExposureOffset(0)
 		effects:stop()
 		T.near(lighting.ExposureCompensation, 0.25, 1e-12, "exposure restored")
 		T.truthy(images[1].destroyed, "images released")
