@@ -1,0 +1,29 @@
+{
+  "name": "Bodycam",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Bodycam": {
+        "$path": "src/Bodycam"
+      },
+      "FPSys": {
+        "$path": "src/FPSys"
+      },
+      "FPSController": {
+        "$path": "src/FPSController"
+      }
+    },
+    "ServerScriptService": {
+      "FPSServer": {
+        "$path": "src/Server/FPSServer.server.luau"
+      }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "FPSClient": {
+          "$path": "src/Client/FPSClient.client.luau"
+        }
+      }
+    }
+  }
+}
