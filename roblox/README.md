@@ -24,13 +24,15 @@ Roblox용 1인칭 **바디캠 연출** 패키지 모음입니다. Unrecord 같�
 
 ### 왜 다시 만들었나
 
-처음 버전은 X-Ray Monolith Bodycam C++ 코드를 줄 단위로 옮긴 포팅이었습니다. 그 소스는 저장소의
-[License.txt](../License.txt)상 상업적 사용이 금지되어 있습니다. 그래서 다음 순서로 다시 만들었습니다.
+처음 버전은 X-Ray Monolith Bodycam C++ 코드를 줄 단위로 옮긴 포팅이었습니다. 그 소스는
+[원본 저장소의 License.txt](https://github.com/asuparabekon/xray-monolith-bodycam)상
+상업적 사용이 금지되어 있습니다. 그래서 다음 순서로 다시 만들었습니다.
 
 1. 원본 코드·상수·녹화 데이터·이름을 쓰지 않고, **동작만 적은 명세서**
    [docs/BODYCAM_DESIGN.md](docs/BODYCAM_DESIGN.md)를 작성했습니다. 기본값은 모두 새로 정했습니다.
 2. **원본과 이전 포팅을 보지 않는 별도 에이전트**가 명세서와 연결 대상 패키지 코드만 보고 구현했습니다.
 3. 원본에서 나온 파일(이전 코어, 녹화 머리 움직임 데이터, C++ 대조 도구와 트레이스, 데이터 변환기)은 삭제했습니다.
+4. 그 뒤 C++ 엔진 소스와 게임 데이터도 이 저장소에서 지웠습니다. 지금 저장소에는 Roblox용 코드만 있습니다(git 이력에는 남아 있습니다).
 
 명세서를 쓴 쪽은 원본을 본 상태이므로, 법적으로 엄격한 클린룸(원본을 본 사람과 구현자가 완전히 분리된 절차)은 아닙니다.
 상업 출시 전에는 법률 검토를 받으세요.
@@ -576,10 +578,12 @@ roblox/tools/golden/build.sh
 
 ### 라이선스
 
-- `Bodycam`: 비상업 라이선스(이 저장소의 [License.txt](../License.txt))가 걸린 X-Ray 소스를 옮긴 이전 포팅을 지우고,
+- `Bodycam`: 비상업 라이선스([원본 저장소의 License.txt](https://github.com/asuparabekon/xray-monolith-bodycam))가 걸린 X-Ray 소스를 옮긴 이전 포팅을 지우고,
   동작 명세([docs/BODYCAM_DESIGN.md](docs/BODYCAM_DESIGN.md))만으로 새로 구현했습니다. 원본 코드·상수·녹화 데이터는
   들어 있지 않습니다. 다만 명세서를 쓴 쪽이 원본을 본 상태라 엄격한 클린룸은 아니므로, 상업 출시 전 법률 검토를 권합니다.
-  이 저장소의 나머지(`src/`, `gamedata/`의 C++ 엔진)는 여전히 License.txt를 따릅니다.
+  C++ 엔진(`src/`, `gamedata/`)은 이 저장소에서 지웠습니다. git 이력에 남은 그 파일들은 여전히 원본 License.txt를 따릅니다.
+- 이 프로젝트에서 새로 쓴 코드(`Bodycam`, `FPSController`, `Sound`, `Lights`, `Ballistics` 등)에는 아직 라이선스 파일이 없습니다.
+  공개 배포하려면 저장소 소유자가 라이선스를 정해야 합니다.
 
 - `FPSys`: 업로드한 모델은 Character-Realism(MPL-2.0)에서 파생되었습니다. 파생 파일은 MPL-2.0이고,
   CloneTrooper1019 크레딧이 필요합니다. 그 안의 `Spring`, `Maid`는 Nevermore Engine(MIT)입니다.

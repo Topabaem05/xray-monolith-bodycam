@@ -3,8 +3,10 @@
 The Roblox port includes code ported from the projects below. Each entry names the
 files that carry the port and reproduces the project's license text.
 
-The C++ source this port is derived from (`src/`, `gamedata/`) is covered by the
-repository's own `License.txt` and `THIRD-PARTY-NOTICES.txt`.
+This repository began as a fork of the X-Ray Monolith Bodycam engine. The engine source
+(`src/`, `gamedata/`) has been removed from it; those files, which remain in the git
+history, are covered by the upstream repository's `License.txt` and
+`THIRD-PARTY-NOTICES.txt`. No engine code is part of the Roblox packages.
 
 | Project | License | Ported into |
 | --- | --- | --- |
